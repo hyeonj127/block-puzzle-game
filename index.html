@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>블록 블라스트 - 맥스 오프셋 버젼</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #121214; color: #fff; margin: 0; padding: 10px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 100vh; overflow: hidden; overscroll-behavior: none;
+        }
+        
+        #title-screen { text-align: center; }
+        #title-screen h1 {
+            font-size: 38px; font-weight: 900;
+            background: linear-gradient(45deg, #ff007f, #00f5ff, #ffd700);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 10px; filter: drop-shadow(0 0 10px rgba(0,245,255,0.3));
+        }
+        #title-screen p { color: #888; margin-bottom: 30px; font-size: 16px; }
+        #start-btn {
+            padding: 15px 40px; font-size: 20px; font-weight: bold;
+            background: linear-gradient(135deg, #ff5722, #ff0055); color: white; border: none;
+            border-radius: 50px; cursor: pointer;
+            box-shadow: 0 4px 20px rgba(255,0,85,0.4);
+        }
+
+        #game-screen { display: none; flex-direction: column; align-items: center; position: relative; }
+        
+        #score-container { display: flex; gap: 20px; font-size: 18px; font-weight: bold; color: #888; margin-bottom: 5px; }
+        #score-board { font-size: 28px; font-weight: bold; color: #ffd700; text-shadow: 0 0 10px rgba(255,215,0,0.3); }
+        #combo-alert { font-size: 18px; font-weight: bold; color: #ff0055; min-height: 24px; margin-bottom: 5px; opacity: 0; transition: opacity 0.2s; }
+        
+        #game-board {
+            display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px;
+            width: 90vw; height: 90vw; max-width: 320px; max-height: 320px;
+            background-color: #1e1e24; border: 3px solid #3a3a44; border-radius: 12px; padding: 4px;
+            position: relative; box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
+        }
+        .cell { background-color: #2a2a35; border-radius: 4px; aspect-ratio: 1; transition: background 0.05s; }
+        
+        .cell.filled { 
+            background: linear-gradient(135deg, #00f5ff, #0077ff); 
+            border: 1px solid #00f5ff;
+            box-shadow: inset -2px -2px 6px rgba(0,0,0,0.4), inset 2px 2px 6px rgba(255,255,255,0.4);
+        }
+        
+        .cell.blast { animation: blast-effect 0.25s ease-out forwards; }
+        @keyframes blast-effect {
+            0% { background: #fff; transform: scale(1.2); filter: brightness(2); box-shadow: 0 0 20px #fff; z-index: 5; }
+            100% { background: #2a2a35; transform: scale(1); filter: none; box-shadow: none; z-index: 1; }
+        }
+        
+        .praise-text {
+            position: absolute; width: 100%; text-align: center;
+            left: 0; top: 38%; font-size: 34px; font-weight: 900;
+            color: #fff; text-shadow: 0 4px 8px #000, 0 0 20px #ff0055;
+            pointer-events: none; z-index: 20;
+            animation: float-up-fade 0.55s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+        }
+        @keyframes float-up-fade {
+            0% { opacity: 0; transform: translateY(25px) scale(0.5); }
+            35% { opacity: 1; transform: translateY(0) scale(1.15); }
+            80% { opacity: 1; transform: translateY(-8px) scale(1); }
+            100% { opacity: 0; transform: translateY(-25px) scale(0.8); }
+        }
+        
+        #perfect-effect {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 215, 0, 0.25); border-radius: 12px;
+            display: none; align-items: center; justify-content: center;
+            font-size: 32px; font-weight: 900; color: #ffd700;
+            text-shadow: 0 0 20px #fff, 0 0 30px #ff0055;
+            z-index: 30; animation: perfect-flash 0.7s ease-out forwards;
+        }
+        @keyframes perfect-flash {
+            0% { opacity: 0; transform: scale(0.6); background: rgba(255,255,255,0.9); }
+            35% { opacity: 1; transform: scale(1.1); }
+            100% { opacity: 0; transform: scale(1); background: rgba(255,215,0,0); }
+        }
+        
+        #block-container {
+            display: flex; justify-content: space-around; align-items: center;
+            width: 100%; max-width: 320px; margin-top: 20px; min-height: 130px;
+            background: #18181c; border-radius: 12px; padding: 10px; border: 2px solid #2d2d35;
+        }
+        .block-preview { display: grid; gap: 2px; padding: 2px; border-radius: 6px; background: rgba(255,255,255,0.03); cursor: grab; touch-action: none; }
+        .p-cell { border-radius: 3px; width: 32px; height: 32px; }
+        
+        .block-preview[data-color="0"] .p-cell.filled, #drag-overlay[data-color="0"] .p-cell.filled { background: linear-gradient(135deg, #ff0055, #ff5722); box-shadow: inset 2px 2px 4px rgba(255,255,255,0.4); }
+        .block-preview[data-color="1"] .p-cell.filled, #drag-overlay[data-color="1"] .p-cell.filled { background: linear-gradient(135deg, #00f5ff, #0077ff); box-shadow: inset 2px 2px 4px rgba(255,255,255,0.4); }
+        .block-preview[data-color="2"] .p-cell.filled, #drag-overlay[data-color="2"] .p-cell.filled { background: linear-gradient(135deg, #7000ff, #ff00ff); box-shadow: inset 2px 2px 4px rgba(255,255,255,0.4); }
+        .block-preview[data-color="3"] .p-cell.filled, #drag-overlay[data-color="3"] .p-cell.filled { background: linear-gradient(135deg, #00ff66, #009944); box-shadow: inset 2px 2px 4px rgba(255,255,255,0.4); }
+        .block-preview[data-color="4"] .p-cell.filled, #drag-overlay[data-color="4"] .p-cell.filled { background: linear-gradient(135deg, #ffd700, #ff9900); box-shadow: inset 2px 2px 4px rgba(255,255,255,0.4); }
+        
+        #block-container.combo-active {
+            border-color: #ff0055; box-shadow: 0 0 15px rgba(255, 0, 85, 0.5); transition: all 0.2s;
+        }
+        
+        .guide-text { font-size: 12px; color: #666; margin: 8px 0 0 0; text-align: center; }
+
+        #drag-overlay {
+            position: fixed; top: 0; left: 0; display: none; gap: 2px; pointer-events: none; z-index: 9999; opacity: 0.95;
+            will-change: transform; transform: translate3d(0,0,0);
+        }
+        #drag-overlay .p-cell { width: 32px; height: 32px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+    <div id="title-screen">
+        <h1>BLOCK BLAST</h1>
+        <p>상단 하이 오프셋 패치 완료 버젼</p>
+        <button id="start-btn">GAME START</button>
+    </div>
+
+    <div id="game-screen">
+        <div id="score-container">
+            <div>HI-SCORE: <span id="hi-score">0</span></div>
+            <div id="score-board">SCORE: <span id="score">0</span></div>
+        </div>
+        <div id="combo-alert">0 COMBO! 🔥</div>
+        <div id="game-board">
+            <div id="perfect-effect">PERFECT ALL CLEAR!!</div>
+        </div>
+        <p class="guide-text">👆 블록이 손가락보다 확연히 위(-100px)에 떠서 시야 확보가 완벽합니다.</p>
+        <div id="block-container"></div>
+    </div>
+
+    <div id="drag-overlay"></div>
+
+<script>
+    const BOARD_SIZE = 8;
+    let board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(0));
+    let score = 0;
+    let hiScore = localStorage.getItem('bb_hiscore') || 0;
+    let combo = 0;
+    let comboStepsLeft = 0;
+    let currentBlocks = [];
+    
+    let activeBlock = null;
+    let isDragging = false;
+    let isBlasting = false;
+
+    let touchOffsetX = 0;
+    let touchOffsetY = 0;
+    let lastX = 0, lastY = 0;
+    let ticking = false;
+
+    // [수정] 손가락 가림 현상을 완전히 없애기 위해 오프셋을 -100px로 대폭 확장
+    const DRAG_Y_OFFSET = -100;
+
+    const BLOCK_SHAPES = [
+        [[1]], [[1, 1]], [[1], [1]], [[1, 1, 1]], [[1], [1], [1]], 
+        [[1, 1], [1, 1]], [[1, 1, 1], [0, 1, 0]], 
+        [[1, 0], [1, 0], [1, 1]], [[1, 1], [1, 0], [1, 0]]
+    ];
+
+    const boardEl = document.getElementById('game-board');
+    const containerEl = document.getElementById('block-container');
+    const scoreEl = document.getElementById('score');
+    const hiScoreEl = document.getElementById('hi-score');
+    const comboEl = document.getElementById('combo-alert');
+    const dragOverlay = document.getElementById('drag-overlay');
+    const perfectEl = document.getElementById('perfect-effect');
+
+    hiScoreEl.innerText = hiScore;
+
+    document.getElementById('start-btn').addEventListener('click', function() {
+        document.getElementById('title-screen').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'flex';
+        createBoard(); generateBlockSet(); initDragEvents();
+    });
+
+    function createBoard() {
+        boardEl.innerHTML = '<div id="perfect-effect">PERFECT ALL CLEAR!!</div>';
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.row = r; cell.dataset.col = c;
+                boardEl.appendChild(cell);
+            }
+        }
+    }
+
+    function drawBoard() {
+        if (isBlasting) return;
+        const cells = boardEl.querySelectorAll('.cell');
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const idx = r * BOARD_SIZE + c;
+                if (board[r][c] === 1) cells[idx].classList.add('filled');
+                else cells[idx].classList.remove('filled');
+            }
+        }
+    }
+
+    function canPlaceBlock(shape, b) {
+        const R = shape.length; const C = shape[0].length;
+        for (let r = 0; r <= BOARD_SIZE - R; r++) {
+            for (let c = 0; c <= BOARD_SIZE - C; c++) {
+                let fit = true;
+                for (let br = 0; br < R; br++) {
+                    for (let bc = 0; bc < C; bc++) {
+                        if (shape[br][bc] === 1 && b[r + br][c + bc] === 1) { fit = false; break; }
+                    }
+                    if (!fit) break;
+                }
+                if (fit) return true;
+            }
+        }
+        return false;
+    }
+
+    function validateBlockTrio(blocks) {
+        for (let block of blocks) {
+            if (!canPlaceBlock(block.shape, board)) return false; 
+        }
+        return true;
+    }
+
+    function generateBlockSet() {
+        containerEl.innerHTML = '';
+        currentBlocks = [];
+        let selectedBlocks = [];
+        let attempts = 0;
+
+        while (attempts < 500) {
+            selectedBlocks = [];
+            for (let i = 0; i < 3; i++) {
+                const randomShape = BLOCK_SHAPES[Math.floor(Math.random() * BLOCK_SHAPES.length)];
+                const randomColor = Math.floor(Math.random() * 5); 
+                selectedBlocks.push({ id: i, shape: randomShape, color: randomColor, used: false });
+            }
+            if (validateBlockTrio(selectedBlocks)) break;
+            attempts++;
+        }
+
+        currentBlocks = selectedBlocks;
+        currentBlocks.forEach(block => renderPreview(block));
+    }
+
+    function renderPreview(block) {
+        const preview = document.createElement('div');
+        preview.classList.add('block-preview');
+        preview.dataset.id = block.id;
+        preview.setAttribute('data-color', block.color); 
+        
+        const R = block.shape.length; const C = block.shape[0].length;
+        preview.style.gridTemplateRows = `repeat(${R}, 32px)`;
+        preview.style.gridTemplateColumns = `repeat(${C}, 32px)`;
+
+        for (let r = 0; r < R; r++) {
+            for (let c = 0; c < C; c++) {
+                const cell = document.createElement('div');
+                cell.classList.add('p-cell');
+                if (block.shape[r][c] === 1) cell.classList.add('filled');
+                preview.appendChild(cell);
+            }
+        }
+
+        preview.addEventListener('mousedown', (e) => startDrag(e, block, preview));
+        preview.addEventListener('touchstart', (e) => startDrag(e, block, preview), { passive: false });
+        containerEl.appendChild(preview);
+    }
+
+    function startDrag(e, block, el) {
+        if (block.used || isBlasting) return;
+        e.preventDefault();
+        
+        activeBlock = block;
+
+        const rect = el.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        touchOffsetX = clientX - rect.left;
+        touchOffsetY = clientY - rect.top;
+
+        dragOverlay.innerHTML = el.innerHTML;
+        dragOverlay.setAttribute('data-color', block.color); 
+        
+        const R = block.shape.length; const C = block.shape[0].length;
+        dragOverlay.style.gridTemplateRows = `repeat(${R}, 32px)`; 
+        dragOverlay.style.gridTemplateColumns = `repeat(${C}, 32px)`;
+        
+        lastX = clientX - touchOffsetX;
+        lastY = clientY - touchOffsetY + DRAG_Y_OFFSET;
+        
+        dragOverlay.style.transform = `translate3d(${lastX}px, ${lastY}px, 0)`;
+        dragOverlay.style.display = 'grid';
+
+        isDragging = true;
+        el.style.opacity = '0.1';
+    }
+
+    function moveDrag(e) {
+        if (!isDragging) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        lastX = clientX - touchOffsetX;
+        lastY = clientY - touchOffsetY + DRAG_Y_OFFSET;
+
+        if (!ticking) {
+            window.requestAnimationFrame(() => {
+                if (isDragging) {
+                    dragOverlay.style.transform = `translate3d(${lastX}px, ${lastY}px, 0)`;
+                }
+                ticking = false;
+            });
+            ticking = true;
+        }
+    }
+
+    function endDrag(e) {
+        if (!isDragging) return;
+        isDragging = false;
+        dragOverlay.style.display = 'none';
+
+        const el = document.querySelector(`[data-id='${activeBlock.id}']`);
+        if (el) el.style.opacity = '1';
+
+        const change = e.changedTouches ? e.changedTouches[0] : e;
+        
+        // [수정] 오프셋 수치가 올라간 만큼 놓는 순간의 중심 타겟 좌표 연산도 정확하게 일치시킴
+        const targetX = change.clientX - touchOffsetX + 16;
+        const targetY = change.clientY - touchOffsetY + DRAG_Y_OFFSET + 16;
+
+        const targetCell = document.elementFromPoint(targetX, targetY);
+
+        if (targetCell && targetCell.classList.contains('cell')) {
+            const startR = parseInt(targetCell.dataset.row);
+            const startC = parseInt(targetCell.dataset.col);
+            
+            if (tryPlace(activeBlock.shape, startR, startC)) {
+                activeBlock.used = true;
+                if (el) el.style.visibility = 'hidden';
+                
+                let blockCellsCount = activeBlock.shape.flat().filter(v => v === 1).length;
+                score += blockCellsCount;
+                scoreEl.innerText = score;
+
+                if (comboStepsLeft > 0) comboStepsLeft--;
+
+                checkLines();
+            }
+        }
+        activeBlock = null;
+    }
+
+    function initDragEvents() {
+        window.addEventListener('mousemove', moveDrag);
+        window.addEventListener('touchmove', moveDrag, { passive: false });
+        window.addEventListener('mouseup', endDrag);
+        window.addEventListener('touchend', endDrag);
+    }
+
+    function tryPlace(shape, r, c) {
+        const R = shape.length; const C = shape[0].length;
+        if (r + R > BOARD_SIZE || c + C > BOARD_SIZE) return false;
+
+        for (let br = 0; br < R; br++) {
+            for (let bc = 0; bc < C; bc++) {
+                if (shape[br][bc] === 1 && board[r + br][c + bc] === 1) return false;
+            }
+        }
+
+        for (let br = 0; br < R; br++) {
+            for (let bc = 0; bc < C; bc++) {
+                if (shape[br][bc] === 1) board[r + br][c + bc] = 1;
+            }
+        }
+
+        drawBoard();
+        return true;
+    }
+
+    function showPraiseText(comboLevel) {
+        const praiseEl = document.createElement('div');
+        praiseEl.classList.add('praise-text');
+        
+        if (comboLevel === 0) {
+            const normals = ['Good! 👍', 'Nice! ✨', 'Cool! 😎'];
+            praiseEl.innerText = normals[Math.floor(Math.random() * normals.length)];
+            praiseEl.style.textShadow = '0 4px 8px #000, 0 0 20px #00adb5';
+        } else if (comboLevel <= 2) {
+            praiseEl.innerText = `Great! 🔥`;
+            praiseEl.style.textShadow = '0 4px 8px #000, 0 0 25px #ff5722';
+        } else if (comboLevel <= 4) {
+            praiseEl.innerText = `Amazing!! ⚡`;
+            praiseEl.style.textShadow = '0 4px 8px #000, 0 0 30px #ffd700';
+            praiseEl.style.fontSize = '38px';
+        } else {
+            praiseEl.innerText = `UNBELIEVABLE!!! 🏆`;
+            praiseEl.style.textShadow = '0 4px 12px #fff, 0 0 35px #ff0055';
+            praiseEl.style.fontSize = '42px';
+        }
+        
+        boardEl.appendChild(praiseEl);
+        setTimeout(() => praiseEl.remove(), 550);
+    }
+
+    function checkLines() {
+        let rowsToRemove = []; let colsToRemove = [];
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            if (board[r].every(val => val === 1)) rowsToRemove.push(r);
+        }
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            let colFull = true;
+            for (let r = 0; r < BOARD_SIZE; r++) { if (board[r][c] === 0) { colFull = false; break; } }
+            if (colFull) colsToRemove.push(c);
+        }
+
+        let linesCleared = rowsToRemove.length + colsToRemove.length;
+        
+        if (linesCleared > 0) {
+            isBlasting = true;
+            combo++;
+            comboStepsLeft = 3;
+            containerEl.classList.add('combo-active');
+
+            showPraiseText(combo);
+
+            const cells = boardEl.querySelectorAll('.cell');
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (rowsToRemove.includes(r) || colsToRemove.includes(c)) {
+                        const idx = r * BOARD_SIZE + c;
+                        cells[idx].classList.remove('filled');
+                        cells[idx].classList.add('blast');
+                    }
+                }
+            }
+
+            let baseLineScore = 10;
+            if (linesCleared === 2) baseLineScore = 30;
+            else if (linesCleared === 3) baseLineScore = 60;
+            else if (linesCleared >= 4) baseLineScore = 100;
+
+            let finalTurnScore = baseLineScore * combo;
+            score += finalTurnScore;
+            scoreEl.innerText = score;
+
+            comboEl.innerText = `${combo} COMBO! 🔥 (+${finalTurnScore}점)`;
+            comboEl.style.opacity = '1';
+
+            rowsToRemove.forEach(r => board[r].fill(0));
+            colsToRemove.forEach(c => {
+                for (let r = 0; r < BOARD_SIZE; r++) board[r][c] = 0;
+            });
+
+            setTimeout(() => {
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (rowsToRemove.includes(r) || colsToRemove.includes(c)) {
+                            const idx = r * BOARD_SIZE + c;
+                            cells[idx].classList.remove('blast');
+                        }
+                    }
+                }
+                isBlasting = false;
+                drawBoard();
+                checkAllClear();
+                postTurnCheck();
+            }, 250);
+
+        } else {
+            showPraiseText(0);
+
+            if (comboStepsLeft <= 0) {
+                combo = 0;
+                comboEl.style.opacity = '0';
+                containerEl.classList.remove('combo-active');
+            }
+            postTurnCheck();
+        }
+    }
+
+    function checkAllClear() {
+        let isAllClear = true;
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] === 1) { isAllClear = false; break; }
+            }
+            if (!isAllClear) break;
+        }
+
+        if (isAllClear) {
+            score += 500;
+            scoreEl.innerText = score;
+            perfectEl.style.display = 'flex';
+            setTimeout(() => { perfectEl.style.display = 'none'; }, 700);
+        }
+    }
+
+    function postTurnCheck() {
+        if (currentBlocks.every(b => b.used)) {
+            generateBlockSet();
+        } else {
+            checkGameOver();
+        }
+    }
+
+    function checkGameOver() {
+        let remainingBlocks = currentBlocks.filter(b => !b.used);
+        if (remainingBlocks.length === 0) return;
+
+        let anyCanPlace = false;
+        for (let block of remainingBlocks) {
+            if (canPlaceBlock(block.shape, board)) { anyCanPlace = true; break; }
+        }
+
+        if (!anyCanPlace) {
+            if (score > hiScore) {
+                hiScore = score;
+                localStorage.setItem('bb_hiscore', hiScore);
+                hiScoreEl.innerText = hiScore;
+                alert(`🎉 축하합니다! 최고 기록 경신: ${score}점`);
+            } else {
+                alert(`게임 오버! 최종 점수: ${score}점`);
+            }
+
+            board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(0));
+            score = 0; combo = 0; comboStepsLeft = 0;
+            scoreEl.innerText = score;
+            comboEl.style.opacity = '0';
+            containerEl.classList.remove('combo-active');
+            createBoard(); drawBoard(); generateBlockSet();
+        }
+    }
+</script>
+</body>
+</html>
