@@ -27,7 +27,6 @@
             border-radius: 50px; cursor: pointer;
             box-shadow: 0 4px 20px rgba(255,0,85,0.4);
         }
-
         #game-screen { display: none; flex-direction: column; align-items: center; position: relative; }
         
         #score-container { display: flex; gap: 20px; font-size: 18px; font-weight: bold; color: #888; margin-bottom: 5px; }
@@ -37,14 +36,19 @@
         #game-board {
             display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px;
             width: 90vw; height: 90vw; max-width: 320px; max-height: 320px;
-            background-color: #1e1e24; border: 3px solid #3a3a44; border-radius: 12px; padding: 4px;
+            background-color: var(--board-bg, #1e1e24); border: 3px solid var(--board-border, #3a3a44); border-radius: 12px; padding: 4px;
             position: relative; box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
+            transition: background-color 0.25s, border-color 0.25s, box-shadow 0.25s;
         }
-        .cell { background-color: #2a2a35; border-radius: 4px; aspect-ratio: 1; transition: background 0.05s; }
+        #game-board.theme-0 { --board-bg: #1e1e24; --board-border: #3a3a44; --cell-empty: #2a2a35; --cell-a: #00f5ff; --cell-b: #0077ff; }
+        #game-board.theme-1 { --board-bg: #172421; --board-border: #2f6b52; --cell-empty: #20352f; --cell-a: #00ff66; --cell-b: #009944; }
+        #game-board.theme-2 { --board-bg: #241a25; --board-border: #6d3a7c; --cell-empty: #33243a; --cell-a: #ff4fd8; --cell-b: #7a35ff; }
+        #game-board.theme-3 { --board-bg: #252014; --board-border: #876a20; --cell-empty: #382f1b; --cell-a: #ffd700; --cell-b: #ff8c1a; }
+        .cell { background-color: var(--cell-empty, #2a2a35); border-radius: 4px; aspect-ratio: 1; transition: background 0.05s; }
         
         .cell.filled { 
-            background: linear-gradient(135deg, #00f5ff, #0077ff); 
-            border: 1px solid #00f5ff;
+            background: linear-gradient(135deg, var(--cell-a, #00f5ff), var(--cell-b, #0077ff)); 
+            border: 1px solid var(--cell-a, #00f5ff);
             box-shadow: inset -2px -2px 6px rgba(0,0,0,0.4), inset 2px 2px 6px rgba(255,255,255,0.4);
         }
         
@@ -138,7 +142,8 @@
     let score = 0;
     let hiScore = localStorage.getItem('bb_hiscore') || 0;
     let combo = 0;
-    let comboStepsLeft = 0;
+    let comboPendingBreak = false;
+    let themeIndex = 0;
     let currentBlocks = [];
     
     let activeBlock = null;
@@ -148,7 +153,6 @@
     let touchOffsetX = 0;
     let touchOffsetY = 0;
     let lastX = 0, lastY = 0;
-    let ticking = false;
 
     // [수정] 손가락 가림 현상을 완전히 없애기 위해 오프셋을 -100px로 대폭 확장
     const DRAG_Y_OFFSET = -100;
@@ -172,7 +176,7 @@
     document.getElementById('start-btn').addEventListener('click', function() {
         document.getElementById('title-screen').style.display = 'none';
         document.getElementById('game-screen').style.display = 'flex';
-        createBoard(); generateBlockSet(); initDragEvents();
+        createBoard(); applyTheme(); generateBlockSet(); initDragEvents();
     });
 
     function createBoard() {
@@ -185,6 +189,16 @@
                 boardEl.appendChild(cell);
             }
         }
+    }
+
+    function applyTheme() {
+        boardEl.classList.remove('theme-0', 'theme-1', 'theme-2', 'theme-3');
+        boardEl.classList.add(`theme-${themeIndex}`);
+    }
+
+    function changeTheme() {
+        themeIndex = (themeIndex + 1) % 4;
+        applyTheme();
     }
 
     function drawBoard() {
@@ -306,15 +320,7 @@
         lastX = clientX - touchOffsetX;
         lastY = clientY - touchOffsetY + DRAG_Y_OFFSET;
 
-        if (!ticking) {
-            window.requestAnimationFrame(() => {
-                if (isDragging) {
-                    dragOverlay.style.transform = `translate3d(${lastX}px, ${lastY}px, 0)`;
-                }
-                ticking = false;
-            });
-            ticking = true;
-        }
+        dragOverlay.style.transform = `translate3d(${lastX}px, ${lastY}px, 0)`;
     }
 
     function endDrag(e) {
@@ -341,11 +347,8 @@
                 activeBlock.used = true;
                 if (el) el.style.visibility = 'hidden';
                 
-                let blockCellsCount = activeBlock.shape.flat().filter(v => v === 1).length;
-                score += blockCellsCount;
+                score += 1;
                 scoreEl.innerText = score;
-
-                if (comboStepsLeft > 0) comboStepsLeft--;
 
                 checkLines();
             }
@@ -380,6 +383,7 @@
         return true;
     }
 
+    /*
     function showPraiseText(comboLevel) {
         const praiseEl = document.createElement('div');
         praiseEl.classList.add('praise-text');
@@ -532,6 +536,171 @@
             comboEl.style.opacity = '0';
             containerEl.classList.remove('combo-active');
             createBoard(); drawBoard(); generateBlockSet();
+        }
+    }
+    */
+
+    function showPraiseText(comboLevel) {
+        const praiseEl = document.createElement('div');
+        praiseEl.classList.add('praise-text');
+
+        if (comboLevel === 0) {
+            const normals = ['Good!', 'Nice!', 'Cool!'];
+            praiseEl.innerText = normals[Math.floor(Math.random() * normals.length)];
+            praiseEl.style.textShadow = '0 4px 8px #000, 0 0 20px #00adb5';
+        } else if (comboLevel <= 2) {
+            praiseEl.innerText = 'Great!';
+            praiseEl.style.textShadow = '0 4px 8px #000, 0 0 25px #ff5722';
+        } else if (comboLevel <= 4) {
+            praiseEl.innerText = 'Amazing!!';
+            praiseEl.style.textShadow = '0 4px 8px #000, 0 0 30px #ffd700';
+            praiseEl.style.fontSize = '38px';
+        } else {
+            praiseEl.innerText = 'UNBELIEVABLE!!!';
+            praiseEl.style.textShadow = '0 4px 12px #fff, 0 0 35px #ff0055';
+            praiseEl.style.fontSize = '42px';
+        }
+
+        boardEl.appendChild(praiseEl);
+        setTimeout(() => praiseEl.remove(), 550);
+    }
+
+    function checkLines() {
+        let rowsToRemove = [];
+        let colsToRemove = [];
+
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            if (board[r].every(val => val === 1)) rowsToRemove.push(r);
+        }
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            let colFull = true;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                if (board[r][c] === 0) {
+                    colFull = false;
+                    break;
+                }
+            }
+            if (colFull) colsToRemove.push(c);
+        }
+
+        const linesCleared = rowsToRemove.length + colsToRemove.length;
+
+        if (linesCleared > 0) {
+            isBlasting = true;
+            if (comboPendingBreak && linesCleared < 2) combo = 0;
+            combo++;
+            comboPendingBreak = false;
+            containerEl.classList.add('combo-active');
+            showPraiseText(combo);
+
+            const cells = boardEl.querySelectorAll('.cell');
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (rowsToRemove.includes(r) || colsToRemove.includes(c)) {
+                        const idx = r * BOARD_SIZE + c;
+                        cells[idx].classList.remove('filled');
+                        cells[idx].classList.add('blast');
+                    }
+                }
+            }
+
+            const baseLineScore = 10 * linesCleared * linesCleared;
+            const finalTurnScore = baseLineScore * combo;
+            score += finalTurnScore;
+            scoreEl.innerText = score;
+
+            comboEl.innerText = `${combo} COMBO! (+${finalTurnScore} pts)`;
+            comboEl.style.opacity = '1';
+
+            rowsToRemove.forEach(r => board[r].fill(0));
+            colsToRemove.forEach(c => {
+                for (let r = 0; r < BOARD_SIZE; r++) board[r][c] = 0;
+            });
+
+            setTimeout(() => {
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (rowsToRemove.includes(r) || colsToRemove.includes(c)) {
+                            const idx = r * BOARD_SIZE + c;
+                            cells[idx].classList.remove('blast');
+                        }
+                    }
+                }
+                isBlasting = false;
+                drawBoard();
+                checkAllClear();
+                postTurnCheck();
+            }, 250);
+        } else {
+            showPraiseText(0);
+            if (combo > 0) comboPendingBreak = true;
+            postTurnCheck();
+        }
+    }
+
+    function checkAllClear() {
+        const isAllClear = board.every(row => row.every(cell => cell === 0));
+
+        if (isAllClear) {
+            score += 500;
+            scoreEl.innerText = score;
+            changeTheme();
+
+            const currentPerfectEl = document.getElementById('perfect-effect');
+            currentPerfectEl.style.display = 'flex';
+            setTimeout(() => { currentPerfectEl.style.display = 'none'; }, 700);
+        }
+    }
+
+    function postTurnCheck() {
+        if (currentBlocks.every(b => b.used)) {
+            if (comboPendingBreak) {
+                combo = 0;
+                comboPendingBreak = false;
+                comboEl.style.opacity = '0';
+                containerEl.classList.remove('combo-active');
+            }
+            generateBlockSet();
+        } else {
+            checkGameOver();
+        }
+    }
+
+    function checkGameOver() {
+        const remainingBlocks = currentBlocks.filter(b => !b.used);
+        if (remainingBlocks.length === 0) return;
+
+        let anyCanPlace = false;
+        for (let block of remainingBlocks) {
+            if (canPlaceBlock(block.shape, board)) {
+                anyCanPlace = true;
+                break;
+            }
+        }
+
+        if (!anyCanPlace) {
+            if (score > hiScore) {
+                hiScore = score;
+                localStorage.setItem('bb_hiscore', hiScore);
+                hiScoreEl.innerText = hiScore;
+                alert(`New high score: ${score} pts`);
+            } else {
+                alert(`Game over! Final score: ${score} pts`);
+            }
+
+            board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(0));
+            score = 0;
+            combo = 0;
+            comboPendingBreak = false;
+            themeIndex = 0;
+            scoreEl.innerText = score;
+            comboEl.style.opacity = '0';
+            containerEl.classList.remove('combo-active');
+            createBoard();
+            applyTheme();
+            drawBoard();
+            generateBlockSet();
         }
     }
 </script>
