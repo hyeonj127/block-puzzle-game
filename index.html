@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>블록 블라스트 - 맥스 오프셋 버젼</title>
+    <title>블록 퍼즐 게임</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
         body {
@@ -104,8 +104,6 @@
             border-color: #ff0055; box-shadow: 0 0 15px rgba(255, 0, 85, 0.5); transition: all 0.2s;
         }
         
-        .guide-text { font-size: 12px; color: #666; margin: 8px 0 0 0; text-align: center; }
-
         #drag-overlay {
             position: fixed; top: 0; left: 0; display: none; gap: 2px; pointer-events: none; z-index: 9999; opacity: 0.95;
             will-change: transform; transform: translate3d(0,0,0);
@@ -116,8 +114,8 @@
 <body>
 
     <div id="title-screen">
-        <h1>BLOCK BLAST</h1>
-        <p>상단 하이 오프셋 패치 완료 버젼</p>
+        <h1>BLOCK PUZZLE</h1>
+        <p>콤보를 쌓아 더 높은 점수를 획득하세요</p>
         <button id="start-btn">GAME START</button>
     </div>
 
@@ -130,7 +128,6 @@
         <div id="game-board">
             <div id="perfect-effect">PERFECT ALL CLEAR!!</div>
         </div>
-        <p class="guide-text">👆 블록이 손가락보다 확연히 위(-100px)에 떠서 시야 확보가 완벽합니다.</p>
         <div id="block-container"></div>
     </div>
 
