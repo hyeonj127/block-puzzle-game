@@ -51,6 +51,17 @@
             border: 1px solid var(--cell-a, #00f5ff);
             box-shadow: inset -2px -2px 6px rgba(0,0,0,0.4), inset 2px 2px 6px rgba(255,255,255,0.4);
         }
+
+        .cell.line-preview {
+            background: linear-gradient(135deg, #fff36a, #ffb300);
+            border: 1px solid #fff9b0;
+            box-shadow: inset 0 0 8px rgba(255,255,255,0.8), 0 0 10px rgba(255,215,0,0.85);
+            animation: line-preview-pulse 0.45s ease-in-out infinite alternate;
+        }
+        @keyframes line-preview-pulse {
+            from { filter: brightness(1); }
+            to { filter: brightness(1.35); }
+        }
         
         .cell.blast { animation: blast-effect 0.25s ease-out forwards; }
         @keyframes blast-effect {
@@ -150,9 +161,15 @@
     let touchOffsetX = 0;
     let touchOffsetY = 0;
     let lastX = 0, lastY = 0;
+    let dragStartClientX = 0, dragStartClientY = 0;
+    let dragStartX = 0, dragStartY = 0;
 
     // [수정] 손가락 가림 현상을 완전히 없애기 위해 오프셋을 -100px로 대폭 확장
     const DRAG_Y_OFFSET = -100;
+    const DRAG_ACCEL_START = 36;
+    const DRAG_ACCEL_DISTANCE = 260;
+    const DRAG_MAX_MULTIPLIER = 1.65;
+    const DROP_SNAP_RADIUS_CELLS = 1.15;
 
     const BLOCK_SHAPES = [
         [[1]], [[1, 1]], [[1], [1]], [[1, 1, 1]], [[1], [1], [1]], 
@@ -299,8 +316,12 @@
         dragOverlay.style.gridTemplateRows = `repeat(${R}, 32px)`; 
         dragOverlay.style.gridTemplateColumns = `repeat(${C}, 32px)`;
         
-        lastX = clientX - touchOffsetX;
-        lastY = clientY - touchOffsetY + DRAG_Y_OFFSET;
+        dragStartClientX = clientX;
+        dragStartClientY = clientY;
+        dragStartX = clientX - touchOffsetX;
+        dragStartY = clientY - touchOffsetY + DRAG_Y_OFFSET;
+        lastX = dragStartX;
+        lastY = dragStartY;
         
         dragOverlay.style.transform = `translate3d(${lastX}px, ${lastY}px, 0)`;
         dragOverlay.style.display = 'grid';
@@ -309,46 +330,59 @@
         el.style.opacity = '0.1';
     }
 
+    function getAcceleratedDragPosition(clientX, clientY) {
+        const deltaX = clientX - dragStartClientX;
+        const deltaY = clientY - dragStartClientY;
+        const distance = Math.hypot(deltaX, deltaY);
+        const progress = Math.min(
+            1,
+            Math.max(0, (distance - DRAG_ACCEL_START) / (DRAG_ACCEL_DISTANCE - DRAG_ACCEL_START))
+        );
+        const easedProgress = progress * progress;
+        const multiplier = 1 + (DRAG_MAX_MULTIPLIER - 1) * easedProgress;
+
+        return {
+            x: dragStartX + deltaX * multiplier,
+            y: dragStartY + deltaY * multiplier
+        };
+    }
+
     function moveDrag(e) {
         if (!isDragging) return;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const position = getAcceleratedDragPosition(clientX, clientY);
 
-        lastX = clientX - touchOffsetX;
-        lastY = clientY - touchOffsetY + DRAG_Y_OFFSET;
+        lastX = position.x;
+        lastY = position.y;
 
         dragOverlay.style.transform = `translate3d(${lastX}px, ${lastY}px, 0)`;
+        updateLineCompletionPreview(activeBlock.shape, lastX + 16, lastY + 16);
     }
 
     function endDrag(e) {
         if (!isDragging) return;
         isDragging = false;
         dragOverlay.style.display = 'none';
+        clearLineCompletionPreview();
 
         const el = document.querySelector(`[data-id='${activeBlock.id}']`);
         if (el) el.style.opacity = '1';
 
-        const change = e.changedTouches ? e.changedTouches[0] : e;
-        
-        // [수정] 오프셋 수치가 올라간 만큼 놓는 순간의 중심 타겟 좌표 연산도 정확하게 일치시킴
-        const targetX = change.clientX - touchOffsetX + 16;
-        const targetY = change.clientY - touchOffsetY + DRAG_Y_OFFSET + 16;
+        // 화면에 보이는 블록 위치를 기준으로 가장 가까운 유효 배치 칸을 찾는다.
+        const targetX = lastX + 16;
+        const targetY = lastY + 16;
 
-        const targetCell = document.elementFromPoint(targetX, targetY);
+        const placement = findNearestValidPlacement(activeBlock.shape, targetX, targetY);
 
-        if (targetCell && targetCell.classList.contains('cell')) {
-            const startR = parseInt(targetCell.dataset.row);
-            const startC = parseInt(targetCell.dataset.col);
+        if (placement && tryPlace(activeBlock.shape, placement.row, placement.col)) {
+            activeBlock.used = true;
+            if (el) el.style.visibility = 'hidden';
             
-            if (tryPlace(activeBlock.shape, startR, startC)) {
-                activeBlock.used = true;
-                if (el) el.style.visibility = 'hidden';
-                
-                score += 1;
-                scoreEl.innerText = score;
+            score += 1;
+            scoreEl.innerText = score;
 
-                checkLines();
-            }
+            checkLines();
         }
         activeBlock = null;
     }
@@ -360,15 +394,101 @@
         window.addEventListener('touchend', endDrag);
     }
 
-    function tryPlace(shape, r, c) {
+    function canPlaceShapeAt(shape, r, c) {
         const R = shape.length; const C = shape[0].length;
-        if (r + R > BOARD_SIZE || c + C > BOARD_SIZE) return false;
+        if (r < 0 || c < 0 || r + R > BOARD_SIZE || c + C > BOARD_SIZE) return false;
 
         for (let br = 0; br < R; br++) {
             for (let bc = 0; bc < C; bc++) {
                 if (shape[br][bc] === 1 && board[r + br][c + bc] === 1) return false;
             }
         }
+
+        return true;
+    }
+
+    function findNearestValidPlacement(shape, targetX, targetY) {
+        const cells = boardEl.querySelectorAll('.cell');
+        if (cells.length === 0) return null;
+
+        const R = shape.length;
+        const C = shape[0].length;
+        const firstCellRect = cells[0].getBoundingClientRect();
+        const secondCellRect = cells[1].getBoundingClientRect();
+        const nextRowCellRect = cells[BOARD_SIZE].getBoundingClientRect();
+        const columnStep = secondCellRect.left - firstCellRect.left;
+        const rowStep = nextRowCellRect.top - firstCellRect.top;
+        const firstCenterX = firstCellRect.left + firstCellRect.width / 2;
+        const firstCenterY = firstCellRect.top + firstCellRect.height / 2;
+        const maxSnapDistance = firstCellRect.width * DROP_SNAP_RADIUS_CELLS;
+        let nearestPlacement = null;
+        let nearestDistance = Infinity;
+
+        for (let r = 0; r <= BOARD_SIZE - R; r++) {
+            for (let c = 0; c <= BOARD_SIZE - C; c++) {
+                if (!canPlaceShapeAt(shape, r, c)) continue;
+
+                const centerX = firstCenterX + c * columnStep;
+                const centerY = firstCenterY + r * rowStep;
+                const distance = Math.hypot(targetX - centerX, targetY - centerY);
+
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestPlacement = { row: r, col: c };
+                }
+            }
+        }
+
+        return nearestDistance <= maxSnapDistance ? nearestPlacement : null;
+    }
+
+    function clearLineCompletionPreview() {
+        boardEl.querySelectorAll('.cell.line-preview').forEach(cell => cell.classList.remove('line-preview'));
+    }
+
+    function updateLineCompletionPreview(shape, targetX, targetY) {
+        clearLineCompletionPreview();
+
+        const placement = findNearestValidPlacement(shape, targetX, targetY);
+        if (!placement) return;
+
+        const isFilledAfterPlacement = (row, col) => {
+            if (board[row][col] === 1) return true;
+
+            const shapeRow = row - placement.row;
+            const shapeCol = col - placement.col;
+            return shapeRow >= 0 && shapeRow < shape.length &&
+                shapeCol >= 0 && shapeCol < shape[0].length &&
+                shape[shapeRow][shapeCol] === 1;
+        };
+
+        const completedRows = [];
+        const completedCols = [];
+
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            if (Array.from({ length: BOARD_SIZE }, (_, c) => isFilledAfterPlacement(r, c)).every(Boolean)) {
+                completedRows.push(r);
+            }
+        }
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            if (Array.from({ length: BOARD_SIZE }, (_, r) => isFilledAfterPlacement(r, c)).every(Boolean)) {
+                completedCols.push(c);
+            }
+        }
+
+        const cells = boardEl.querySelectorAll('.cell');
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (completedRows.includes(r) || completedCols.includes(c)) {
+                    cells[r * BOARD_SIZE + c].classList.add('line-preview');
+                }
+            }
+        }
+    }
+
+    function tryPlace(shape, r, c) {
+        const R = shape.length; const C = shape[0].length;
+        if (!canPlaceShapeAt(shape, r, c)) return false;
 
         for (let br = 0; br < R; br++) {
             for (let bc = 0; bc < C; bc++) {
